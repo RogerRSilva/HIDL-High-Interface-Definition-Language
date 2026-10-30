@@ -1,0 +1,9 @@
+[project]
+name = "hidl-semantica"
+version = "0.1.0"
+description = "HIDL — recorte da análise semântica (AST → IR)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
