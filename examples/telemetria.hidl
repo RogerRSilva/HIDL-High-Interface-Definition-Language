@@ -1,0 +1,12 @@
+// Exemplo do documento de concepção: ID de 16 bits + velocidade de 32 bits.
+packet Telemetria {
+    id:         uint16;
+    velocidade: uint32;
+}
+
+// Campos menores que um byte: 1 + 3 + 4 = 8 bits.
+packet Status {
+    ativo: bool;
+    modo:  uint3;
+    nivel: uint4;
+}

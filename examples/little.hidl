@@ -1,0 +1,6 @@
+// Little-endian exige campos alinhados em byte (múltiplos de 8 bits).
+packet Sensor endian little {
+    canal: uint8;
+    leitura: int16;
+    carimbo: uint32;
+}

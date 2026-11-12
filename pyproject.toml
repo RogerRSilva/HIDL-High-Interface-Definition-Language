@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hidl"
+version = "0.2.0"
+description = "HIDL — compilador de contratos CPU–FPGA (MVP: front-end, IR e back-end C++)"
+requires-python = ">=3.10"
+
+[project.scripts]
+hidl = "hidl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
