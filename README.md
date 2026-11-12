@@ -1,49 +1,66 @@
-# HIDL — Análise semântica (recorte)
+# HIDL — Hardware Interface Definition Language (MVP)
 
-Contém apenas a etapa **AST → IR**: valida o contrato e calcula os offsets dos campos.
-Não depende do parser nem de bibliotecas externas (só `pytest` para os testes).
+Um contrato de texto descreve o pacote que trafega entre CPU e FPGA. O compilador gera,
+a partir dele, o código C++ que lê e escreve esse pacote.
 
 ```
-src/hidl/ast.py        entrada: PacketDecl / FieldDecl (o que o parser produz)
-src/hidl/semantic.py   build_ir(decls) -> list[IRPacket]  (validações + offsets)
-src/hidl/ir.py         saída: IRPacket / IRField (imutáveis)
-src/hidl/errors.py     Diagnostic / ContractError (um ou vários erros, com linha:coluna)
-tests/test_semantic.py 55 testes; montam a AST na mão, sem passar pelo parser
+contrato .hidl → lexer → parser → AST → semantic.build_ir → IR → backends/cpp → .hpp
 ```
 
-```bash
-pip install pytest
-pytest            # 55 passed
 ```
-
-## Regras verificadas por `build_ir`
-
-| Regra | Mensagem (trecho) |
-|---|---|
-| Nome de pacote único | `pacote 'X' já declarado` |
-| Nome de campo único dentro do pacote | `campo 'x' já declarado` |
-| Pacote com pelo menos um campo | `não tem campos` |
-| Nomes não reservados (`packet`, `endian`, palavras de C++ e Verilog, portas `clk rst_n in_valid in_sof in_data out_valid`, `decode`, `encode`) | `é palavra reservada` |
-| Tipo ∈ `bool`, `uintN`, `intN` (sem zeros à esquerda) | `tipo desconhecido` |
-| 1 ≤ N ≤ 64 | `excede o máximo de 64 bits` |
-| `int1` proibido (use `bool`/`uint1`) | `int1 não é suportado` |
-| `endian` ∈ `big` (padrão), `little` | `endianness inválida` |
-| `endian little`: todo campo com largura múltipla de 8 | `…little-endian, todos os campos devem ter largura múltipla de 8` |
-| Tamanho total do pacote múltiplo de 8 bits | `o tamanho total deve ser múltiplo de 8` |
-
-Comportamento: todos os erros são coletados e levantados juntos num único `ContractError`
-(cada `Diagnostic` traz `line`/`column`). Se não houver erros, devolve a IR com `offset`
-(em bits, a partir do MSB do primeiro byte) já calculado para cada campo.
+src/hidl/lexer.py      texto → tokens (linha:coluna)
+src/hidl/parser.py     tokens → AST (descendente recursivo; gramática no docstring)
+src/hidl/ast.py        PacketDecl / FieldDecl
+src/hidl/semantic.py   build_ir(decls): validações + offsets
+src/hidl/ir.py         IRPacket / IRField (imutáveis), to_text / to_json
+src/hidl/backends/cpp.py  IR → cabeçalho C++ autocontido
+src/hidl/cli.py        hidl compile ...
+docs/SPEC_MAPEAMENTO.md   regras de bits e mapeamento (referência dos back-ends)
+examples/              contratos de exemplo (válidos e um inválido)
+demo/                  soma e subtração com o C++ gerado
+tests/                 91 testes (inclui compilar e executar o C++ gerado)
+```
 
 ## Uso
 
-```python
-from hidl.ast import FieldDecl, PacketDecl
-from hidl.semantic import build_ir
+```bash
+pip install pytest          # só para os testes
+pip install -e .            # opcional: instala o comando `hidl`
 
-p = PacketDecl("Telemetria", None, (0, 0),
-               [FieldDecl("id", "uint16", 2, 5), FieldDecl("velocidade", "uint32", 3, 5)], 1, 8)
-(ir,) = build_ir([p])
-print(ir.total_bytes, [(f.name, f.offset, f.width) for f in ir.fields])
-# 6 [('id', 0, 16), ('velocidade', 16, 32)]
+python -m hidl compile examples/telemetria.hidl --check
+python -m hidl compile examples/telemetria.hidl --ir
+python -m hidl compile examples/telemetria.hidl --json
+python -m hidl compile examples/telemetria.hidl --cpp build/telemetria.hpp
+python -m hidl compile examples/invalido.hidl --check     # erros com arquivo:linha:coluna
 ```
+(com `PYTHONPATH=src` se não instalou o pacote.)
+
+## Demo: soma e subtração
+
+```bash
+./demo/run_demo.sh 1000 -250     # requer python3 e g++
+```
+Gera `build/calculadora.hpp` a partir de `examples/calculadora.hidl`, compila `demo/main.cpp`
+e roda. Saída esperada:
+
+```
+pacote Operandos  : 03 E8 FF 06
+a = 1000, b = -250
+soma = 750, diferenca = 1250
+pacote Resultado  : 00 00 02 EE 00 00 04 E2
+```
+
+## Testes
+
+```bash
+pytest        # 91 passed (os testes que usam C++ são pulados se não houver g++)
+```
+
+Os testes do back-end geram o `.hpp`, compilam com `-Wall -Wextra -pedantic -Werror`, e
+comparam `encode`/`decode` com uma referência em Python (valores mínimos, máximos e aleatórios,
+em big e little-endian, até 64 bits).
+
+## Limites do MVP
+
+Só C++ (sem Verilog ainda); sem structs aninhados, arrays ou campos condicionais; `little`
+exige campos alinhados em byte; sem padding automático. Veja `docs/SPEC_MAPEAMENTO.md`.

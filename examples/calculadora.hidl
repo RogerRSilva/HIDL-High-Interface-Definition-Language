@@ -1,0 +1,11 @@
+// Demo do MVP: a CPU recebe dois operandos já decodificados e devolve soma e diferença.
+packet Operandos {
+    a: int16;
+    b: int16;
+}
+
+// 32 bits para o resultado não estourar com dois int16.
+packet Resultado {
+    soma:      int32;
+    diferenca: int32;
+}

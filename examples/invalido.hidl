@@ -1,0 +1,5 @@
+packet Ruim {
+    clk: uint8;
+    x:   float32;
+    y:   uint3;
+}
