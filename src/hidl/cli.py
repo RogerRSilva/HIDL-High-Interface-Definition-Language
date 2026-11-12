@@ -46,8 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(to_json(packets))
     if args.cpp:
-        args.cpp.write_text(generate_cpp(packets, path.name), encoding="utf-8")
+        try:
+            args.cpp.parent.mkdir(parents=True, exist_ok=True)
+            args.cpp.write_text(generate_cpp(packets, path.name), encoding="utf-8")
+        except OSError as e:
+            print(f"{args.cpp}: erro: não foi possível escrever o arquivo ({e.strerror})", file=sys.stderr)
+            return 1
         print(f"gerado: {args.cpp}")
-    if args.check or not (args.ir or args.json or args.cpp):
-        print(f"{path}: ok ({len(packets)} pacote(s))")
-    return 0
