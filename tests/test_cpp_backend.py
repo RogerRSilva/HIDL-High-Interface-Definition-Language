@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from hidl.backends.cpp import ctype, generate
+from hidl.backends.cpp import RUNTIME_ABI, ctype, generate, runtime_dir
 from hidl.ir import BOOL, INT
 from hidl.parser import parse
 from hidl.semantic import build_ir
@@ -38,7 +38,26 @@ def test_cabecalho_tem_estrutura_esperada():
     h = generate(list(PACOTES.values()), "x.hidl")
     assert "#pragma once" in h and "struct Telemetria {" in h
     assert "kSizeBytes = 6;" in h and "kSizeBytes = 15;" in h
-    assert "read_le(buf, 8, 16)" in h  # little-endian usa read_le
+    assert "rt::read_le<std::int16_t, 8, 16>(buf)" in h  # little-endian usa read_le
+    assert "rt::read_be<std::uint16_t, 0, 16>(buf)" in h
+
+
+def test_cabecalho_nao_embute_logica_de_bits():
+    h = generate(list(PACOTES.values()), "x.hidl")
+    assert '#include "hidl/runtime.hpp"' in h
+    assert "namespace detail" not in h and "sign_extend" not in h
+    assert f"static_assert(HIDL_RUNTIME_ABI == {RUNTIME_ABI}," in h
+
+
+def test_standalone_embute_o_runtime():
+    h = generate(list(PACOTES.values()), "x.hidl", standalone=True)
+    assert '#include "hidl/runtime.hpp"' not in h
+    assert "namespace rt" in h and "inline T read_be" in h
+
+
+def test_abi_do_python_coincide_com_o_header():
+    src = (runtime_dir() / "hidl" / "runtime.hpp").read_text(encoding="utf-8")
+    assert f"#define HIDL_RUNTIME_ABI {RUNTIME_ABI}\n" in src
 
 
 # ------------------------------------------------------------ referência
@@ -93,7 +112,7 @@ def binarios(tmp_path_factory):
     exes = {}
     for name, pkt in PACOTES.items():
         (d / f"{name}.cpp").write_text(harness(pkt))
-        subprocess.run(["g++", "-std=c++11", "-Wall", "-Wextra", "-pedantic", "-Werror", "-I", str(d),
+        subprocess.run(["g++", "-std=c++11", "-Wall", "-Wextra", "-pedantic", "-Werror", "-I", str(d), "-I", str(runtime_dir()),
                         str(d / f"{name}.cpp"), "-o", str(d / name)], check=True)
         exes[name] = str(d / name)
     return exes
@@ -117,5 +136,39 @@ def test_buffer_curto_e_rejeitado(tmp_path):
     (tmp_path / "m.cpp").write_text(
         '#include "t.hpp"\nint main(){ unsigned char b[5]={0}; hidl::Telemetria t;'
         ' return (!hidl::Telemetria::decode(b,5,t) && !t.encode(b,5)) ? 0 : 1; }')
-    subprocess.run(["g++", "-std=c++11", "-I", str(tmp_path), str(tmp_path / "m.cpp"), "-o", str(tmp_path / "m")], check=True)
+    subprocess.run(["g++", "-std=c++11", "-I", str(tmp_path), "-I", str(runtime_dir()), str(tmp_path / "m.cpp"), "-o", str(tmp_path / "m")], check=True)
     assert subprocess.run([str(tmp_path / "m")]).returncode == 0
+
+
+GCC = ["g++", "-std=c++11", "-Wall", "-Wextra", "-pedantic", "-Werror"]
+
+
+@needs_gpp
+def test_standalone_compila_sem_runtime_no_include_path(tmp_path):
+    (tmp_path / "t.hpp").write_text(generate(list(PACOTES.values()), "t.hidl", standalone=True))
+    (tmp_path / "m.cpp").write_text(
+        '#include "t.hpp"\nint main(){ unsigned char b[6]={1,2,0,0,255,255}; hidl::Telemetria t;'
+        ' return (hidl::Telemetria::decode(b,6,t) && t.id==258 && t.velocidade==65535) ? 0 : 1; }')
+    subprocess.run(GCC + ["-I", str(tmp_path), str(tmp_path / "m.cpp"), "-o", str(tmp_path / "m")], check=True)
+    assert subprocess.run([str(tmp_path / "m")]).returncode == 0
+
+
+@needs_gpp
+def test_standalone_convive_com_runtime_normal(tmp_path):
+    """Dois headers (um standalone, outro não) no mesmo programa: o include guard evita redefinição."""
+    (tmp_path / "a.hpp").write_text(generate([PACOTES["Telemetria"]], "a.hidl", standalone=True))
+    (tmp_path / "b.hpp").write_text(generate([PACOTES["Bits"]], "b.hidl"))
+    (tmp_path / "m.cpp").write_text('#include "a.hpp"\n#include "b.hpp"\nint main(){ return 0; }')
+    subprocess.run(GCC + ["-I", str(tmp_path), "-I", str(runtime_dir()), str(tmp_path / "m.cpp"),
+                          "-o", str(tmp_path / "m")], check=True)
+
+
+@needs_gpp
+def test_abi_incompativel_vira_erro_de_compilacao(tmp_path):
+    h = generate([PACOTES["Telemetria"]], "t.hidl").replace(
+        f"HIDL_RUNTIME_ABI == {RUNTIME_ABI}", "HIDL_RUNTIME_ABI == 999")
+    (tmp_path / "t.hpp").write_text(h)
+    (tmp_path / "m.cpp").write_text('#include "t.hpp"\nint main(){ return 0; }')
+    r = subprocess.run(GCC + ["-I", str(tmp_path), "-I", str(runtime_dir()), str(tmp_path / "m.cpp"),
+                              "-o", str(tmp_path / "m")], capture_output=True, text=True)
+    assert r.returncode != 0 and "outra versão do runtime HIDL" in r.stderr
