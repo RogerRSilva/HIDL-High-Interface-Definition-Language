@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
             print(d.format(str(path)), file=sys.stderr)
         return 1
 
+    if args.check:
+        print(f"ok ({len(packets)} pacote(s))")
     if args.ir:
         print(to_text(packets))
     if args.json:
@@ -53,3 +55,4 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{args.cpp}: erro: não foi possível escrever o arquivo ({e.strerror})", file=sys.stderr)
             return 1
         print(f"gerado: {args.cpp}")
+    return 0
