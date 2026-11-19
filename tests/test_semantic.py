@@ -185,3 +185,9 @@ def test_diagnosticos_sempre_tem_posicao():
         build_ir([pkt("A", [("x", "float32"), ("x", "uint8"), ("y", "uint3")])])
     assert all(d.line > 0 and d.column > 0 for d in e.value.diagnostics)
     assert e.value.diagnostics[0].format("c.hidl").startswith("c.hidl:")
+
+
+def test_pacote_rt_colide_com_o_runtime_cpp():
+    """`struct hidl::rt` conflitaria com o namespace do runtime; campo chamado `rt` é inofensivo."""
+    assert any("reservada" in m for m in errors(pkt("rt", [("x", "uint8")])))
+    assert one(pkt("P", [("rt", "uint8")])).fields[0].name == "rt"

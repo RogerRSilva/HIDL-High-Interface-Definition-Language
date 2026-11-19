@@ -55,8 +55,38 @@ Fora do MVP: structs aninhados, arrays, campos condicionais, ponto flutuante.
 - `encode` zera `kSizeBytes` bytes antes de escrever e grava os N bits menos significativos
   do valor (valor fora da faixa é truncado, como em um cast C).
 
-## 6. Nomes reservados
+## 6. Runtime C++ (`hidl/runtime.hpp`)
+
+As regras das seções 3 a 5 (posição dos bits, endianness, extensão de sinal, truncamento) são
+implementadas **uma única vez**, em `src/hidl/runtime/hidl/runtime.hpp`: um cabeçalho escrito à
+mão, C++11, independente de contrato. O código gerado não repete essa lógica; só chama:
+
+| Função | Efeito |
+|---|---|
+| `rt::read_be<T, Off, W>(buf)` / `rt::write_be<T, Off, W>(buf, v)` | campo de W bits no bit Off, big-endian |
+| `rt::read_le<T, Off, W>(buf)` / `rt::write_le<T, Off, W>(buf, v)` | campo alinhado em byte, little-endian |
+
+- `Off`, `W` e `T` são argumentos de template: tudo é resolvido em tempo de compilação.
+  Campos alinhados em byte usam leitura por byte; os demais, um laço bit a bit que o
+  compilador desenrola.
+- Combinações inválidas não compilam: `W` fora de 1..64, `T` menor que `W`, `T` não inteiro,
+  e `read_le`/`write_le` em campo não alinhado em byte.
+- `read_*` de tipo com sinal estende o sinal a partir do bit W−1; `write_*` grava os W bits
+  menos significativos (seção 5).
+- **Versão (ABI):** o runtime define `HIDL_RUNTIME_ABI` e todo `.hpp` gerado contém
+  `static_assert(HIDL_RUNTIME_ABI == N, ...)`. Mudar a semântica das funções acima exige
+  incrementar esse número (em `runtime.hpp` e em `backends/cpp.RUNTIME_ABI`); um `.hpp`
+  gerado por versão antiga passa a falhar na compilação em vez de divergir em silêncio.
+- **Distribuição:** `hidl compile --cpp saida.hpp` grava também `hidl/runtime.hpp` ao lado da
+  saída (compile com `-I<diretório da saída>`). Com `--standalone` o runtime é embutido no
+  `.hpp`; o runtime tem include guard, então os dois modos podem conviver no mesmo programa.
+
+A suíte `tests/test_runtime.py` valida o runtime contra a lógica bit a bit original; qualquer
+back-end futuro (por exemplo, Verilog) deve ser validado contra esta mesma especificação.
+
+## 7. Nomes reservados
 
 Campos e pacotes não podem usar palavras-chave do contrato, de C++ ou de Verilog, as portas
 do módulo Verilog (`clk rst_n in_valid in_sof in_data out_valid`) nem `decode`/`encode`.
-A lista está em `semantic.RESERVED`.
+Nomes de pacote também não podem ser `rt` (namespace do runtime C++, seção 6).
+A lista está em `semantic.RESERVED` / `semantic.RESERVED_PACKET`.

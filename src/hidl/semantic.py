@@ -29,6 +29,8 @@ _CPP_KW = {
 # Palavras-chave do próprio contrato também são reservadas.
 _HIDL_KW = {"packet", "endian"}
 RESERVED = _HIDL_KW | _VERILOG_PORTS | _VERILOG_KW | _CPP_KW
+# Nomes de pacote que colidem com o runtime C++ (`hidl::rt`): o struct gerado ficaria em `hidl::`.
+RESERVED_PACKET = RESERVED | {"rt"}
 
 
 def build_ir(decls: list[PacketDecl]) -> list[IRPacket]:
@@ -41,7 +43,7 @@ def build_ir(decls: list[PacketDecl]) -> list[IRPacket]:
             diags.append(Diagnostic(
                 f"pacote '{d.name}' já declarado na linha {seen_packets[d.name]}", d.line, d.column))
         seen_packets[d.name] = seen_packets.get(d.name, d.line)
-        if d.name in RESERVED:
+        if d.name in RESERVED_PACKET:
             diags.append(Diagnostic(f"'{d.name}' é palavra reservada", d.line, d.column))
 
         if not d.fields:
